@@ -702,9 +702,36 @@ table.ship.form td.field .f-no {
   .ru-phrase .phrase { font-size: 1.38em; }
   .target-phrase { font-size: 1.25em; }
 }
+/* ─────────────── Мобильные экраны (телефон) ─────────────── */
+@media (max-width: 640px) {
+  /* Шапка: название переносится на две строки вместо обрезки многоточием */
+  .brand { flex: 1 1 100%; }
+  h1.site { white-space: normal; overflow: visible; text-overflow: clip; font-size: 0.95rem; }
+  .controls { width: 100%; justify-content: flex-end; }
+
+  /* Заголовки экранов и карточка */
+  .view-head h2 { font-size: 1.05rem; }
+  .card-box { padding: 0.95rem; }
+  .bubble { max-width: 100%; }
+
+  /* Справочник: компактные вкладки, глоссарий и таблицы */
+  .ref-tabs { flex-wrap: wrap; margin-bottom: 0.7rem; }
+  .ref-tabs .mode-btn { padding: 0.3rem 0.65rem; font-size: 0.78rem; }
+  .search-input { font-size: 0.9rem; margin-bottom: 0.7rem; }
+  .gl-group-title { font-size: 0.76rem; margin: 0.85rem 0 0.3rem; }
+  .term-row { padding: 0.5rem 0.65rem; gap: 0.15rem 0.5rem; }
+  .term-en { font-size: 0.88em; }
+  .term-note { font-size: 0.75em; }
+  .ref-title { font-size: 0.98rem; }
+  .ref-sub { font-size: 0.76rem; margin-bottom: 0.6rem; }
+  .table-box { padding: 0.55rem; }
+  table.ship { font-size: 0.8em; }
+  table.ship th, table.ship td { padding: 0.4rem 0.5rem; }
+  .notes { padding: 0.7rem 0.9rem; font-size: 0.78rem; }
+}
+
 @media (max-width: 480px) {
   .head-inner { padding: 0.55rem 0.75rem; }
   .subtitle { display: none; }
-  .card-box { padding: 0.95rem; }
-  .bubble { max-width: 100%; }
+  h1.site { font-size: 0.9rem; }
 }
