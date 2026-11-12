@@ -1108,7 +1108,7 @@ document.addEventListener('click', e => {
       }
       break;
     case 'font-inc': state.fscale = Math.min(1.3, +(state.fscale + 0.075).toFixed(3)); applyFont(); saveState(); break;
-    case 'font-dec': state.fscale = Math.max(0.85, +(state.fscale - 0.075).toFixed(3)); applyFont(); saveState(); break;
+    case 'font-dec': state.fscale = Math.max(0.55, +(state.fscale - 0.075).toFixed(3)); applyFont(); saveState(); break;
 
     /* Режим изучения */
     case 'reveal': study.revealed = true; drawStudy(); break;
@@ -1198,12 +1198,32 @@ document.addEventListener('click', e => {
   }
 });
 
-/* Клик по свободному месту карточки = раскрыть перевод */
+/* Тап по свободному месту карточки = открыть перевод / закрыть обратно */
 document.addEventListener('click', e => {
   const box = e.target.closest('#cardBox');
   if (!box || e.target.closest('button, a, input, textarea, select')) return;
-  if (!study.revealed) { study.revealed = true; drawStudy(); }
+  study.revealed = !study.revealed;
+  drawStudy();
 });
+
+/* Свайп влево/вправо по карточке = следующая/предыдущая (телефон) */
+let swipe = null;
+document.addEventListener('touchstart', e => {
+  if (e.touches.length !== 1 || !e.target.closest('.card-zone')) { swipe = null; return; }
+  swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+}, { passive: true });
+document.addEventListener('touchend', e => {
+  if (!swipe) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swipe.x, dy = t.clientY - swipe.y, dt = Date.now() - swipe.t;
+  swipe = null;
+  if (dt > 800) return;                                   // долгий тап — не свайп
+  if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.4) return; // вертикальная прокрутка
+  const inStudy = $('#cardBox') && (location.hash.startsWith('#/learn')
+    || location.hash.startsWith('#/random') || location.hash.startsWith('#/favorites'));
+  if (!inStudy) return;
+  studyNav(dx < 0 ? 1 : -1);
+}, { passive: true });
 
 /* Импорт файла */
 document.addEventListener('change', e => {
