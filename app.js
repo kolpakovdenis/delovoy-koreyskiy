@@ -1198,18 +1198,72 @@ document.addEventListener('click', e => {
   }
 });
 
-/* Тап по свободному месту карточки = открыть перевод / закрыть обратно */
+/* ── Тап по свободному месту карточки = открыть перевод / закрыть обратно ──
+   Важно: не мешать выделению отдельных слов — пользователь иногда
+   выделяет слово (долгое нажатие или двойной тап), чтобы скопировать
+   его и посмотреть в словаре. Поэтому тап игнорируется, если:
+   • в карточке уже есть активное выделение текста;
+   • нажатие было долгим (долгое нажатие = жест выделения слова);
+   • палец сместился (протяжка выделения, а не тап);
+   • это второй тап подряд (двойной тап = выделение слова).
+   Само открытие/закрытие срабатывает с небольшой задержкой: если во
+   время ожидания началось выделение — карточка не перерисовывается,
+   и выделение не пропадает. */
+let cardPress = null;      // параметры нажатия {x, y, t}
+let cardTapTimer = null;   // отложенное открытие/закрытие
+let lastCardTap = 0;       // момент предыдущего тапа (для двойного тапа)
+const TAP_DBL_MS = 300;    // окно двойного тапа
+const TAP_DELAY_MS = 330;  // задержка перед открытием/закрытием
+
+function selectionActive() {
+  const sel = window.getSelection ? window.getSelection() : null;
+  return !!(sel && sel.type === 'Range' && String(sel).trim().length > 0);
+}
+
+document.addEventListener('pointerdown', e => {
+  cardPress = e.target.closest('#cardBox') && !e.target.closest('button, a, input, textarea, select')
+    ? { x: e.clientX, y: e.clientY, t: Date.now() }
+    : null;
+});
+
 document.addEventListener('click', e => {
   const box = e.target.closest('#cardBox');
   if (!box || e.target.closest('button, a, input, textarea, select')) return;
-  study.revealed = !study.revealed;
-  drawStudy();
+  if (selectionActive()) return;                          // слово выделено — не трогаем карточку
+  const now = Date.now();
+  if (cardPress) {                                        // долгое нажатие или протяжка?
+    const dur = now - cardPress.t;
+    const dist = Math.hypot(e.clientX - cardPress.x, e.clientY - cardPress.y);
+    if (dur > 400 || dist > 14) return;
+  }
+  if (now - lastCardTap < TAP_DBL_MS) {                   // двойной тап — отмена
+    lastCardTap = now;
+    clearTimeout(cardTapTimer); cardTapTimer = null;
+    return;
+  }
+  lastCardTap = now;
+  clearTimeout(cardTapTimer);
+  cardTapTimer = setTimeout(() => {
+    cardTapTimer = null;
+    if (selectionActive()) return;                        // началось выделение — не закрывать
+    const onStudy = $('#cardBox') && (location.hash.startsWith('#/learn')
+      || location.hash.startsWith('#/random') || location.hash.startsWith('#/favorites'));
+    if (!onStudy) return;
+    study.revealed = !study.revealed;
+    drawStudy();
+  }, TAP_DELAY_MS);
+});
+
+/* Начало выделения текста отменяет запланированное открытие/закрытие */
+document.addEventListener('selectionchange', () => {
+  if (selectionActive() && cardTapTimer) { clearTimeout(cardTapTimer); cardTapTimer = null; }
 });
 
 /* Свайп влево/вправо по карточке = следующая/предыдущая (телефон) */
 let swipe = null;
 document.addEventListener('touchstart', e => {
   if (e.touches.length !== 1 || !e.target.closest('.card-zone')) { swipe = null; return; }
+  if (selectionActive()) { swipe = null; return; }        // работа с выделением слова — не свайп
   swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
 }, { passive: true });
 document.addEventListener('touchend', e => {
@@ -1217,6 +1271,7 @@ document.addEventListener('touchend', e => {
   const t = e.changedTouches[0];
   const dx = t.clientX - swipe.x, dy = t.clientY - swipe.y, dt = Date.now() - swipe.t;
   swipe = null;
+  if (selectionActive()) return;                          // во время жеста выделили слово
   if (dt > 800) return;                                   // долгий тап — не свайп
   if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.4) return; // вертикальная прокрутка
   const inStudy = $('#cardBox') && (location.hash.startsWith('#/learn')
