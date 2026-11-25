@@ -43,6 +43,9 @@ const state = {
   fav: [],           // [cardId] — избранное
   quiz: {},          // { cardId: { ok: n, bad: n } } — ответы в тестах
   dialogueDone: 0,   // сколько диалогов завершено
+  respOpen: false,   // развернуты ли «Примеры ответов партнёра» в карточке
+  altOpen: false,    // развернут ли «Вариант 2» в карточке
+  dlgLen: '7',       // длина диалога: '5' | '7' | '10' | 'all' (вся тема)
 };
 
 function loadState() {
@@ -286,6 +289,10 @@ function drawStudy() {
        • сверху корейский вариант koAlt (с озвучкой),
        • под ним тот же смысл на английском enAlt. */
   const altHtml = (c.koAlt || c.enAlt) ? `
+    <button type="button" class="fold-btn" data-action="alt-toggle" aria-expanded="${!!state.altOpen}">
+      ${state.altOpen ? '▾' : '▸'} Вариант 2 · формальная формулировка
+    </button>
+    ${state.altOpen ? `
     <div class="alt-box">
       ${c.koAlt ? `
         <div class="lang-row">
@@ -299,7 +306,7 @@ function drawStudy() {
           ${speakBtn(c.id, 'enAlt', 'Озвучить вариант 2 по-английски')}
         </div>
         <p class="alt-en">${esc(c.enAlt)}</p>` : ''}
-    </div>` : '';
+    </div>` : ''}` : '';
   const revealHtml = revealed ? `
     <div class="reveal-section reveal">
       <div class="lang-row">
@@ -313,14 +320,17 @@ function drawStudy() {
         <div class="line-speak">${speakBtn(c.id, 'en', 'Озвучить по-английски')}</div>` : ''}
       ${altHtml}
       <div class="context-box">${esc(c.context)}</div>
-      <p class="q-label" style="margin-top:0.9rem;text-align:left">Примеры ответов партнёра</p>
+      <button type="button" class="fold-btn" data-action="resp-toggle" aria-expanded="${!!state.respOpen}">
+        ${state.respOpen ? '▾' : '▸'} Примеры ответов партнёра · ${c.responses.length}
+      </button>
+      ${state.respOpen ? `
       <ul class="responses">
         ${c.responses.map((r, i) => `
           <li><span>${esc(r.ru)}
             <span class="r-ko kr">${esc(r.ko)}</span>
             <span class="r-en">${esc(r.en)}</span>
             ${speakBtn(c.id, 'resp:' + i, state.lang === 'ko' ? 'Озвучить по-корейски' : 'Озвучить ответ', 'inline')}${state.lang === 'ko' ? speakBtn(c.id, 'resp-en:' + i, 'Озвучить по-английски', 'inline') : ''}</span></li>`).join('')}
-      </ul>
+      </ul>` : ''}
     </div>` : `
     <button type="button" class="btn outline" style="align-self:center" data-action="reveal">
       Показать перевод &nbsp;<span class="mut">Space</span>
@@ -375,30 +385,88 @@ function studyNav(step) {
 }
 
 /* ─────────────── 7. Практика диалога ─────────────── */
+/* Диалог построен как чат: реплики партнёра и ваши ответы остаются
+   в истории — можно вернуться и перечитать. Перевод фразы партнёра
+   скрыт до нажатия «Показать перевод», чтобы сначала понимать самому.
+   Варианты ответа показаны по-русски (выбор мысли), а корейское или
+   английское звучание появляется уже в вашей реплике — так меньше
+   текста на экране и сильнее тренировка. */
 function renderDialogue(topicId) {
   if (!topicId) { drawDialogueSetup(); return; }
   const pool = topicId === 'all' ? DATA.cards : DATA.cards.filter(c => c.topic === topicId);
   if (!pool.length) { drawDialogueSetup(); return; }
   const t = DATA.topics.find(x => x.id === topicId);
+  /* Длина диалога — выбор пользователя: часть темы или вся тема целиком.
+     Набор фраз каждый раз случайный: «Начать диалог» = новая выборка. */
+  const want = state.dlgLen === 'all' ? pool.length
+    : Math.min(parseInt(state.dlgLen, 10) || 7, pool.length);
   dlg = {
     topicId: topicId || 'all',
     title: topicId === 'all' ? 'Смешанная встреча' : (t ? `${t.emoji} ${t.title}` : 'Диалог'),
-    ids: shuffle(pool).slice(0, Math.min(7, pool.length)).map(c => c.id),
-    i: 0, stage: 'partner', picked: -1, free: '', showRu: false,
+    ids: shuffle(pool).slice(0, want).map(c => c.id),
+    i: 0, stage: 'partner', picked: -1, free: '', showTr: false, log: [],
+    freeCount: 0, freeGood: 0, freeEval: null,
   };
   drawDialogue();
 }
 
+function partnerBubbleHtml(e, isCurrent) {
+  const c = byId[e.cardId];
+  const t = DATA.topics.find(x => x.id === c.topic);
+  const tr = e.showTr ? `
+        <p class="ru-line">${esc(c.ru)}</p>
+        ${state.lang === 'ko' && c.en ? `<p class="en-line">${esc(c.en)}</p>` : ''}
+        ${state.lang === 'en' && c.ko ? `<p class="kr-line kr">${esc(c.ko)}</p>` : ''}` : '';
+  return `
+    <div class="bubble partner${isCurrent ? ' card-swap' : ''}">
+      <span class="who">Партнёр · ${t ? esc(t.title) : ''}</span>
+      <p class="phrase kr">${esc(c[LANGS[state.lang].field])}</p>
+      ${tr}
+      <div class="bubble-actions">
+        ${speakBtn(c.id, 'target', 'Озвучить фразу партнёра')}
+        ${isCurrent && state.lang === 'ko' && c.en && e.showTr ? speakBtn(c.id, 'en', 'Озвучить по-английски', 'inline') : ''}
+        <button type="button" class="link-btn" data-action="dlg-tr" data-lg="${isCurrent ? 'cur' : dlg.log.indexOf(e)}">
+          ${e.showTr ? 'Скрыть перевод' : 'Показать перевод'}</button>
+      </div>
+    </div>`;
+}
+
+function youBubbleHtml(e) {
+  const c = byId[e.cardId];
+  if (e.kind === 'free') {
+    return `
+    <div class="bubble you">
+      <span class="who">Вы</span>
+      <p class="phrase">${esc(e.val)}</p>
+    </div>`;
+  }
+  const r = c.responses[e.val];
+  return `
+    <div class="bubble you">
+      <span class="who">Вы</span>
+      <p class="phrase${state.lang === 'ko' ? ' kr' : ''}">${esc(state.lang === 'ko' ? r.ko : r.en)}</p>
+      ${state.lang === 'ko' ? `<p class="en-line">${esc(r.en)}</p>` : ''}
+      <p class="ru-line">${esc(r.ru)}</p>
+      <div class="bubble-actions">
+        ${speakBtn(c.id, 'resp:' + e.val, 'Озвучить ваш ответ')}
+        ${state.lang === 'ko' ? speakBtn(c.id, 'resp-en:' + e.val, 'Озвучить по-английски', 'inline') : ''}
+      </div>
+    </div>`;
+}
+
 function drawDialogueSetup() {
+  const L = state.dlgLen;
   $('#screen').innerHTML = `
     <div class="view-head">
       <button type="button" class="back-btn" data-action="back">← На главную</button>
       <h2>🗣️ Практика диалога</h2>
     </div>
     <div class="setup-box">
-      <p style="margin:0;font-size:0.92rem" class="mut">Партнёр «говорит» фразу на ${LANGS[state.lang].title.toLowerCase()}
-      (с озвучкой и подсказкой произношения). Ваша задача — понять и ответить: выберите готовый вариант
-      или сформулируйте свой. Реплики взяты из реальных переговоров.</p>
+      <p style="margin:0;font-size:0.92rem" class="mut">Партнёр «говорит» фразу на ${LANGS[state.lang].title.toLowerCase()} — с озвучкой.
+      Перевод скрыт: постарайтесь понять фразу сами и сверьтесь кнопкой «Показать перевод».
+      Затем ответьте готовым вариантом или своими словами — свой ответ оценивается
+      примерно, по ключевым словам (это подсказка, а не экзамен). Каждый диалог —
+      новый случайный набор фраз из выбранной темы.</p>
       <div class="setup-row">
         <span class="lbl">Тема диалога</span>
         <div class="select-wrap">
@@ -408,68 +476,79 @@ function drawDialogueSetup() {
           </select>
         </div>
       </div>
+      <div class="setup-row">
+        <span class="lbl">Длина диалога</span>
+        <div class="select-wrap">
+          <select id="dlgLen">
+            <option value="5"${L === '5' ? ' selected' : ''}>Короткий · 5 фраз</option>
+            <option value="7"${L === '7' ? ' selected' : ''}>Стандартный · 7 фраз</option>
+            <option value="10"${L === '10' ? ' selected' : ''}>Длинный · 10 фраз</option>
+            <option value="all"${L === 'all' ? ' selected' : ''}>Вся тема целиком</option>
+          </select>
+        </div>
+      </div>
       <button type="button" class="btn" data-action="dlg-start">Начать диалог</button>
     </div>`;
 }
 
 function drawDialogue() {
-  const L = LANGS[state.lang];
   const c = byId[dlg.ids[dlg.i]];
-  const t = DATA.topics.find(x => x.id === c.topic);
+  const historyHtml = dlg.log.map(e => e.who === 'partner' ? partnerBubbleHtml(e, false) : youBubbleHtml(e)).join('');
+  const curPartnerHtml = partnerBubbleHtml({ cardId: c.id, showTr: dlg.showTr }, true);
+  const youHtml = dlg.stage === 'answered' ? youBubbleHtml({
+    cardId: c.id,
+    kind: dlg.picked >= 0 ? 'reply' : 'free',
+    val: dlg.picked >= 0 ? dlg.picked : dlg.free,
+  }) : '';
 
   let body = '';
   if (dlg.stage === 'partner') {
     body = `
-      <div class="reply-list" style="margin-top:0.9rem">
-        <button type="button" class="btn outline" data-action="dlg-show-ru">Показать перевод фразы</button>
-        <button type="button" class="btn" data-action="dlg-show-replies">Показать варианты ответа</button>
+      <div class="reply-list">
+        <button type="button" class="btn" data-action="dlg-show-replies">Варианты ответа</button>
         <button type="button" class="btn outline" data-action="dlg-free">Ответить своими словами</button>
       </div>`;
   } else if (dlg.stage === 'replies') {
     body = `
-      <p class="q-label" style="margin-top:0.9rem;text-align:left">Выберите ответ (или сформулируйте свой):</p>
+      <p class="q-label" style="margin:0.2rem 0 0;text-align:left">Выберите мысль, которую хотите сказать:</p>
       <div class="reply-list">
         ${c.responses.map((r, i) => `
           <button type="button" class="reply-btn" data-action="dlg-pick" data-idx="${i}">
-            <span><b>${esc(r.ru)}</b>
-            <span class="r-ko kr">${esc(r.ko)}</span>
-            <span class="r-en">${esc(r.en)}</span></span>
+            <span><b>${esc(r.ru)}</b></span>
           </button>`).join('')}
       </div>
-      <div style="display:flex;gap:0.5rem;margin-top:0.7rem;flex-wrap:wrap">
+      <div class="dlg-actions">
         <button type="button" class="btn small outline" data-action="dlg-free">Свой вариант</button>
         <button type="button" class="btn small outline" data-action="dlg-next">Пропустить →</button>
       </div>`;
   } else if (dlg.stage === 'free') {
     body = `
-      <p class="q-label" style="margin-top:0.9rem;text-align:left">Ваш ответ (по-${LANGS[state.lang].code === 'KO' ? 'корейски' : 'английски'} или по-русски — как удобно):</p>
+      <p class="q-label" style="margin:0.2rem 0 0;text-align:left">Ваш ответ (по-${LANGS[state.lang].code === 'KO' ? 'корейски' : 'английски'} или по-русски — как удобно):</p>
       <textarea class="free-input" id="freeText" placeholder="Введите ответ…">${esc(dlg.free)}</textarea>
-      <div style="display:flex;gap:0.5rem;margin-top:0.7rem;flex-wrap:wrap">
+      <div class="dlg-actions">
         <button type="button" class="btn" data-action="dlg-free-done">Готово</button>
         <button type="button" class="btn small outline" data-action="dlg-next">Пропустить →</button>
       </div>`;
   } else if (dlg.stage === 'answered') {
-    const r = dlg.picked >= 0 ? c.responses[dlg.picked] : null;
     body = `
-      <div class="bubble you reveal">
-        <span class="who">Вы</span>
-        ${r
-          ? `<p class="phrase">${esc(r.ru)}<br><span class="kr koc">${esc(r.ko)}</span><br><span class="enc">${esc(r.en)}</span></p>
-             ${speakBtn(c.id, 'resp:' + dlg.picked, 'Озвучить ваш ответ')}
-             ${state.lang === 'ko' ? speakBtn(c.id, 'resp-en:' + dlg.picked, 'Озвучить по-английски', 'inline') : ''}`
-          : `<p class="phrase">${esc(dlg.free)}</p>
-             <span class="mut" style="font-size:0.8rem">Сравните с вариантами ниже — они звучат естественно в деловом контексте.</span>`}
-      </div>
-      ${r ? '' : `
-      <div class="reply-list reveal" style="margin-top:0.4rem">
-        ${c.responses.map((rr, i) => `
-          <button type="button" class="reply-btn" data-action="dlg-pick" data-idx="${i}">
-            <span><b>${esc(rr.ru)}</b>
-            <span class="r-ko kr">${esc(rr.ko)}</span>
-            <span class="r-en">${esc(rr.en)}</span></span>
-          </button>`).join('')}
-      </div>`}
-      <div style="margin-top:0.9rem">
+      ${dlg.picked < 0 ? `
+        ${dlg.freeEval ? `
+        <div class="grade-box ${esc(dlg.freeEval.tier)}">
+          <b>${dlg.freeEval.tier === 'good' ? '✓ Хорошее совпадение' : dlg.freeEval.tier === 'mid' ? '≈ Частичное совпадение' : '○ Слабое совпадение'}${dlg.freeEval.best >= 0 ? ` · ~${dlg.freeEval.pct}%` : ''}</b>
+          ${dlg.freeEval.best >= 0 ? `<span>Ближе всего эталон: «${esc(c.responses[dlg.freeEval.best].ru)}»</span>` : ''}
+          <span class="mut">Оценка примерная — по ключевым словам. Точный вариант можно принять ниже.</span>
+        </div>` : ''}
+        <p class="q-label" style="margin:0.2rem 0 0;text-align:left">Естественные варианты ответа — нажмите, чтобы принять:</p>
+        <div class="reply-list">
+          ${c.responses.map((r, i) => `
+            <button type="button" class="reply-btn" data-action="dlg-pick" data-idx="${i}">
+              <span><b>${esc(r.ru)}</b><span class="r-ko kr">${esc(r.ko)}</span></span>
+            </button>`).join('')}
+        </div>` : `
+        <div class="dlg-actions">
+          <button type="button" class="btn small outline" data-action="dlg-show-replies">Ответить по-другому</button>
+        </div>`}
+      <div class="dlg-actions">
         <button type="button" class="btn" data-action="dlg-next">
           ${dlg.i === dlg.ids.length - 1 ? 'Завершить диалог' : 'Следующая фраза →'}
         </button>
@@ -483,24 +562,35 @@ function drawDialogue() {
       <span class="badge outline">Фраза ${dlg.i + 1} из ${dlg.ids.length}</span>
     </div>
     <div class="chat">
-      <div class="bubble partner card-swap">
-        <span class="who">Партнёр · ${t ? esc(t.title) : ''}</span>
-        <p class="phrase kr">${esc(c[L.field])}</p>
-        ${state.lang === 'ko' && c.en ? `
-          <p class="en-line">${esc(c.en)}</p>
-          <div class="line-speak">${speakBtn(c.id, 'en', 'Озвучить по-английски')}</div>` : ''}
-        <div class="bubble-actions">
-          ${speakBtn(c.id, 'target', 'Озвучить фразу партнёра')}
-          ${state.lang === 'ko' && c.en ? speakBtn(c.id, 'en', 'Озвучить по-английски', 'inline') : ''}
-          ${dlg.showRu ? `<span class="badge">${esc(c.ru)}</span>` : ''}
-        </div>
-      </div>
+      ${historyHtml}
+      ${curPartnerHtml}
+      ${youHtml}
       ${body}
     </div>
     <p class="kbd-hint">Esc — выйти из диалога</p>`;
+  scrollChatEnd();
+}
+
+/* Прокрутка чата к последнему элементу (телефон) */
+function scrollChatEnd() {
+  requestAnimationFrame(() => {
+    const last = document.querySelector('.chat')?.lastElementChild;
+    if (last) last.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
 }
 
 function dlgNext() {
+  /* Текущий обмен уходит в историю: реплика партнёра и ответ (если был) */
+  dlg.log.push({ who: 'partner', cardId: dlg.ids[dlg.i], showTr: dlg.showTr });
+  if (dlg.stage === 'answered') {
+    if (dlg.picked < 0) {                 // свободный ответ — считаем и оцениваем
+      dlg.freeCount++;
+      if (dlg.freeEval && dlg.freeEval.tier === 'good') dlg.freeGood++;
+    }
+    dlg.log.push(dlg.picked >= 0
+      ? { who: 'you', cardId: dlg.ids[dlg.i], kind: 'reply', val: dlg.picked }
+      : { who: 'you', cardId: dlg.ids[dlg.i], kind: 'free', val: dlg.free });
+  }
   if (dlg.i >= dlg.ids.length - 1) {
     state.dialogueDone++;
     saveState();
@@ -508,6 +598,7 @@ function dlgNext() {
       <div class="result-box">
         <p class="result-score">Диалог завершён</p>
         <p class="result-sub">${esc(dlg.title)} · отработано фраз: ${dlg.ids.length}</p>
+        ${dlg.freeCount ? `<p class="result-sub">Своих формулировок: ${dlg.freeCount} · из них с хорошим совпадением: ${dlg.freeGood}</p>` : ''}
         <p class="result-sub">Всего диалогов проведено: ${state.dialogueDone}</p>
         <div class="result-actions">
           <button type="button" class="btn" data-action="go" data-to="#/dialogue/${esc(dlg.topicId)}">Ещё диалог</button>
@@ -521,8 +612,62 @@ function dlgNext() {
   dlg.stage = 'partner';
   dlg.picked = -1;
   dlg.free = '';
-  dlg.showRu = false;
+  dlg.showTr = false;
   drawDialogue();
+}
+
+/* ── Примерная оценка свободного ответа ──
+   Ответ сравнивается с эталонными вариантами по ключевым словам:
+   • корейские слова — с отрезанием частиц (을/를/은/는…), проверка вхождения;
+   • русские и английские — по основе слова (первые 5 букв), стоп-слова отбрасываются.
+   Это подсказка для самопроверки, а не строгий экзамен: программа не знает
+   синонимов, поэтому процент всегда показывается как «примерный». */
+const RU_STOP = new Set(('и в во не что он на я с со как а то все она так его но да ты к у же вы за бы по только ее мне было вот от меня еще нет о из ему теперь когда даже ну вдруг ли если уже или ни быть был него до вас нибудь опять уж вам ведь там потом себя ничего ей может они тут где есть надо ней для мы тебя их чем была сам чтоб без будто чего раз тоже себе под будет тогда кто этот того потому этого какой совсем ним здесь этом один почти мой тем чтобы ее сейчас были куда зачем всех никогда можно при наконец два об другой хоть после над больше тот через эти нас про всего них какая много разве три эту моя впрочем хорошо свою этой перед иногда лучше чуть том нельзя такой им более всегда конечно всю между').split(' '));
+const EN_STOP = new Set(('the a an and or but if of to in on at for with by from as is are was were be been being it its this that these those we you they he she i me my our your their them us him her will would can could should shall may might do does did have has had not no so than then there here please about into over after before up down out just very too also one two all any some more most other such only own same s').split(' '));
+const KO_PARTICLES = ['에게는', '으로써', '이라는', '에서', '에게', '한테', '까지', '부터', '처럼', '마다', '만큼', '이라', '라고', '들이', '하고', '으로', '조차', '보다', '을', '를', '은', '는', '이', '가', '와', '과', '도', '로', '에', '의', '만', '야', '고', '며'];
+
+function isHangul(s) { return /[\uAC00-\uD7AF\u1100-\u11FF]/.test(s); }
+
+function stemToken(tok) {
+  if (isHangul(tok)) {
+    let t = tok;
+    for (const p of KO_PARTICLES) {
+      if (t.length > p.length && t.endsWith(p)) { t = t.slice(0, -p.length); break; }
+    }
+    return t.length >= 2 ? t : tok;   // слишком короткий корень — слово целиком
+  }
+  return tok.length > 5 ? tok.slice(0, 5) : tok;  // основа слова: первые 5 букв
+}
+
+function refTokens(text) {
+  return String(text || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/).filter(Boolean)
+    .filter(tok => {
+      if (isHangul(tok)) return tok.length >= 2;
+      if (RU_STOP.has(tok) || EN_STOP.has(tok)) return false;
+      return tok.length >= (/[а-яё]/.test(tok) ? 4 : 3);
+    })
+    .map(stemToken);
+}
+
+function freeAnswerEval(answer, card) {
+  const norm = String(answer).toLowerCase();
+  let best = -1, bestScore = 0;
+  card.responses.forEach((r, i) => {
+    /* Языки считаем отдельно: ответ может быть на любом из трёх,
+       поэтому берём лучший процент среди RU / EN / KO эталона */
+    let score = 0;
+    for (const refs of [refTokens(r.ru), refTokens(r.en), refTokens(r.ko)]) {
+      const uniq = [...new Set(refs)];
+      if (!uniq.length) continue;
+      const hit = uniq.filter(t => norm.includes(t)).length;
+      score = Math.max(score, hit / uniq.length);
+    }
+    if (score > bestScore) { bestScore = score; best = i; }
+  });
+  const pct = Math.round(bestScore * 100);
+  const tier = bestScore >= 0.6 ? 'good' : bestScore >= 0.3 ? 'mid' : 'low';
+  return { pct, tier, best };
 }
 
 /* ─────────────── 8. Тест и сопоставление ─────────────── */
@@ -1112,6 +1257,8 @@ document.addEventListener('click', e => {
 
     /* Режим изучения */
     case 'reveal': study.revealed = true; drawStudy(); break;
+    case 'alt-toggle': state.altOpen = !state.altOpen; saveState(); drawStudy(); break;
+    case 'resp-toggle': state.respOpen = !state.respOpen; saveState(); drawStudy(); break;
     case 'prev': studyNav(-1); break;
     case 'next': studyNav(1); break;
     case 'fav': {
@@ -1141,11 +1288,19 @@ document.addEventListener('click', e => {
     /* Диалог */
     case 'dlg-start': {
       const v = $('#dlgTopic') ? $('#dlgTopic').value : 'all';
+      const lenEl = $('#dlgLen');
+      if (lenEl) { state.dlgLen = lenEl.value; saveState(); }  // запоминаем длину диалога
       location.hash = '#/dialogue/' + v;
       break;
     }
-    case 'dlg-show-ru': dlg.showRu = true; drawDialogue(); break;
     case 'dlg-show-replies': dlg.stage = 'replies'; drawDialogue(); break;
+    case 'dlg-tr': {                    // показать/скрыть перевод реплики партнёра
+      const v = btn.dataset.lg;
+      if (v === 'cur') dlg.showTr = !dlg.showTr;
+      else dlg.log[+v].showTr = !dlg.log[+v].showTr;
+      drawDialogue();
+      break;
+    }
     case 'dlg-free': dlg.stage = 'free'; drawDialogue(); {
       const ta = $('#freeText'); if (ta) ta.focus();
       break;
@@ -1155,6 +1310,7 @@ document.addEventListener('click', e => {
       dlg.free = (ta ? ta.value : '').trim();
       if (!dlg.free) { dlg.stage = 'partner'; drawDialogue(); break; }
       dlg.stage = 'answered'; dlg.picked = -1;
+      dlg.freeEval = freeAnswerEval(dlg.free, byId[dlg.ids[dlg.i]]);  // примерная сверка с эталонами
       drawDialogue();
       break;
     }
