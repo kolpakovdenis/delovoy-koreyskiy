@@ -454,6 +454,40 @@ footer.site {
   color: var(--fg); padding: 0.7rem 0.9rem; font: inherit; font-size: 0.95em;
 }
 
+/* Сворачиваемые блоки карточки («Вариант 2», «Примеры ответов») */
+.fold-btn {
+  align-self: flex-start; margin: 0.9rem 0 0; display: inline-flex; align-items: center; gap: 0.4rem;
+  background: none; border: 1px dashed var(--border); border-radius: 0.7rem;
+  color: var(--muted-fg); font: inherit; font-size: 0.78rem; font-weight: 600;
+  padding: 0.4rem 0.75rem; cursor: pointer;
+}
+.fold-btn:hover { color: var(--fg); border-color: var(--accent); }
+
+/* Текстовые кнопки внутри реплик чата («Показать перевод») */
+.link-btn {
+  background: none; border: none; padding: 0.25rem 0.3rem; cursor: pointer;
+  color: var(--muted-fg); font: inherit; font-size: 0.78rem;
+  text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.link-btn:hover { color: var(--accent); }
+
+/* Строки перевода в репликах */
+.bubble .ru-line { margin: 0.35rem 0 0; text-align: left; font-size: 0.8rem; color: var(--muted-fg); }
+.bubble .kr-line { margin: 0.3rem 0 0; text-align: left; font-size: 0.9em; color: var(--ko); }
+.dlg-actions { display: flex; gap: 0.5rem; margin-top: 0.7rem; flex-wrap: wrap; }
+
+/* Оценка свободного ответа в диалоге */
+.grade-box {
+  display: flex; flex-direction: column; gap: 0.25rem; margin: 0.7rem 0 0;
+  padding: 0.7rem 0.9rem; border-radius: 0.8rem; border: 1px solid var(--border);
+  background: var(--card); font-size: 0.86rem; line-height: 1.4;
+}
+.grade-box b { font-size: 0.92rem; }
+.grade-box.good { border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: var(--ok-bg); color: var(--ok); }
+.grade-box.good .mut, .grade-box.good span:last-child { color: color-mix(in srgb, var(--ok) 80%, var(--fg)); }
+.grade-box.mid { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: var(--ko-bg); color: var(--ko); }
+.grade-box.mid span:last-child { color: color-mix(in srgb, var(--ko) 80%, var(--fg)); }
+
 /* ─────────────── Тест ─────────────── */
 .setup-box {
   border: 1px solid var(--border); border-radius: 1rem; background: var(--card);
@@ -713,6 +747,9 @@ table.ship.form td.field .f-no {
   .view-head h2 { font-size: 1.05rem; }
   .card-box { padding: 0.95rem; }
   .bubble { max-width: 100%; }
+
+  /* Подсказки по клавиатуре на телефоне не нужны */
+  .kbd-hint { display: none; }
 
   /* Справочник: компактные вкладки, глоссарий и таблицы */
   .ref-tabs { flex-wrap: wrap; margin-bottom: 0.7rem; }
